@@ -1,0 +1,196 @@
+// Franklin Planner - Database Schema
+// Based on PRD v1.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USERS
+// ============================================================================
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  timezone     String   @default("America/New_York")
+  settings     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  categories  Category[]
+  activities  Activity[]
+  timeboxes   Timebox[]
+  dailyPlans  DailyPlan[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// CATEGORIES & ACTIVITIES
+// ============================================================================
+
+model Category {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  name            String
+  color           String   @default("#6366f1") // Indigo default
+  weeklyGoalHours Float?   @map("weekly_goal_hours")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities Activity[]
+  timeboxes  Timebox[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model Activity {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  categoryId String   @map("category_id")
+  name       String
+  notes      String?
+  isArchived Boolean  @default(false) @map("is_archived")
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Reverse relations for planned blocks
+  plannedBlocks PlannedBlock[] @relation("PlannedActivity")
+  actualBlocks  PlannedBlock[] @relation("ActualActivity")
+  defaultTimeboxes Timebox[]   @relation("DefaultActivity")
+
+  @@unique([userId, categoryId, name])
+  @@map("activities")
+}
+
+// ============================================================================
+// TIMEBOXES (Schedule Templates)
+// ============================================================================
+
+model Timebox {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  categoryId        String   @map("category_id")
+  defaultActivityId String?  @map("default_activity_id")
+  
+  // Time configuration
+  startTime         String   @map("start_time") // "06:00" format
+  endTime           String   @map("end_time")   // "07:30" format
+  
+  // Day configuration: null = all days, 0-6 = specific day (0=Sunday)
+  dayOfWeek         Int?     @map("day_of_week")
+  
+  isActive          Boolean  @default(true) @map("is_active")
+  sortOrder         Int      @default(0) @map("sort_order")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category        Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  defaultActivity Activity? @relation("DefaultActivity", fields: [defaultActivityId], references: [id], onDelete: SetNull)
+  plannedBlocks   PlannedBlock[]
+
+  @@map("timeboxes")
+}
+
+// ============================================================================
+// DAILY PLANS & EXECUTION TRACKING
+// ============================================================================
+
+model DailyPlan {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  date          DateTime @db.Date
+  
+  // End-of-day review
+  overallRating Int?     @map("overall_rating") // 1-5 scale
+  notes         String?
+  reviewedAt    DateTime? @map("reviewed_at")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plannedBlocks PlannedBlock[]
+
+  @@unique([userId, date])
+  @@map("daily_plans")
+}
+
+// Deviation reasons enum
+enum DeviationReason {
+  ENERGY       // Too tired / too wired
+  MOOD         // Not feeling it
+  INTERRUPTION // External factor
+  OPPORTUNITY  // Something better came up
+  OVERRUN      // Previous block ran long
+  SKIP         // Just didn't do it
+
+  @@map("deviation_reason")
+}
+
+model PlannedBlock {
+  id                String          @id @default(uuid())
+  dailyPlanId       String          @map("daily_plan_id")
+  timeboxId         String          @map("timebox_id")
+  
+  // What was planned vs what actually happened
+  plannedActivityId String?         @map("planned_activity_id")
+  actualActivityId  String?         @map("actual_activity_id")
+  
+  // Deviation tracking
+  deviationReason   DeviationReason? @map("deviation_reason")
+  deviationNotes    String?         @map("deviation_notes")
+  
+  // Optional timing (for users who want to track precisely)
+  startedAt         DateTime?       @map("started_at")
+  endedAt           DateTime?       @map("ended_at")
+  
+  // Status tracking
+  isCompleted       Boolean         @default(false) @map("is_completed")
+  completedAt       DateTime?       @map("completed_at")
+  
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  dailyPlan       DailyPlan @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+  timebox         Timebox   @relation(fields: [timeboxId], references: [id], onDelete: Cascade)
+  plannedActivity Activity? @relation("PlannedActivity", fields: [plannedActivityId], references: [id], onDelete: SetNull)
+  actualActivity  Activity? @relation("ActualActivity", fields: [actualActivityId], references: [id], onDelete: SetNull)
+
+  @@unique([dailyPlanId, timeboxId])
+  @@map("planned_blocks")
+}
