@@ -21,6 +21,9 @@
   "keywords": ["productivity", "timeboxing", "planner", "franklin"],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": "20.x"
+},
   "dependencies": {
     "@prisma/client": "^7.2.0",
     "bcryptjs": "^3.0.3",
