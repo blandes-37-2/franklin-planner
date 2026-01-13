@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "echo 'Skipping build'",
-    "start": "npx ts-node src/index.ts",
+    "start": "npx ts-node --transpile-only src/index.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
